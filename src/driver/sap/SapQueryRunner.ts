@@ -27,6 +27,7 @@ import { QueryLock } from "../../query-runner/QueryLock"
 import { MetadataTableType } from "../types/MetadataTableType"
 import { InstanceChecker } from "../../util/InstanceChecker"
 import { promisify } from "util"
+import { BroadcasterResult } from "../../subscriber/BroadcasterResult"
 
 /**
  * Runs queries on a single SQL Server database connection.
@@ -194,29 +195,56 @@ export class SapQueryRunner extends BaseQueryRunner implements QueryRunner {
 
         let statement: any
         const result = new QueryResult()
+        const broadcasterResult = new BroadcasterResult()
 
         try {
             const databaseConnection = await this.connect()
 
             this.driver.connection.logger.logQuery(query, parameters, this)
+            this.broadcaster.broadcastBeforeQueryEvent(
+                broadcasterResult,
+                query,
+                parameters,
+            )
+
             const queryStartTime = +new Date()
             const isInsertQuery = query.substr(0, 11) === "INSERT INTO"
 
-            statement = databaseConnection.prepare(query)
+            if (parameters?.some(Array.isArray)) {
+                statement = await promisify(
+                    databaseConnection.prepare.bind(databaseConnection),
+                )(query)
+            }
 
-            const raw = await new Promise<any>((ok, fail) => {
-                statement.exec(parameters, (err: any, raw: any) =>
-                    err
-                        ? fail(new QueryFailedError(query, parameters, err))
-                        : ok(raw),
-                )
-            })
+            let raw: any
+            try {
+                raw = statement
+                    ? await promisify(statement.exec.bind(statement))(
+                          parameters,
+                      )
+                    : await promisify(
+                          databaseConnection.exec.bind(databaseConnection),
+                      )(query, parameters, {})
+            } catch (err) {
+                throw new QueryFailedError(query, parameters, err)
+            }
 
             // log slow queries if maxQueryExecution time is set
             const maxQueryExecutionTime =
                 this.driver.connection.options.maxQueryExecutionTime
             const queryEndTime = +new Date()
             const queryExecutionTime = queryEndTime - queryStartTime
+
+            this.broadcaster.broadcastAfterQueryEvent(
+                broadcasterResult,
+                query,
+                parameters,
+                true,
+                queryExecutionTime,
+                raw,
+                undefined,
+            )
+
             if (
                 maxQueryExecutionTime &&
                 queryExecutionTime > maxQueryExecutionTime
@@ -261,19 +289,30 @@ export class SapQueryRunner extends BaseQueryRunner implements QueryRunner {
                 result.raw = identityValueResult[0]["CURRENT_IDENTITY_VALUE()"]
                 result.records = identityValueResult
             }
-        } catch (e) {
+        } catch (err) {
             this.driver.connection.logger.logQueryError(
-                e,
+                err,
                 query,
                 parameters,
                 this,
             )
-            throw e
+            this.broadcaster.broadcastAfterQueryEvent(
+                broadcasterResult,
+                query,
+                parameters,
+                false,
+                undefined,
+                undefined,
+                err,
+            )
+            throw err
         } finally {
             // Never forget to drop the statement we reserved
             if (statement?.drop) {
                 await new Promise<void>((ok) => statement.drop(() => ok()))
             }
+
+            await broadcasterResult.wait()
 
             // Always release the lock.
             release()
@@ -3274,7 +3313,7 @@ export class SapQueryRunner extends BaseQueryRunner implements QueryRunner {
     protected escapePath(target: Table | View | string): string {
         const { schema, tableName } = this.driver.parseTableName(target)
 
-        if (schema) {
+        if (schema && schema !== this.driver.schema) {
             return `"${schema}"."${tableName}"`
         }
 
@@ -3314,5 +3353,17 @@ export class SapQueryRunner extends BaseQueryRunner implements QueryRunner {
         }
 
         return c
+    }
+
+    /**
+     * Change table comment.
+     */
+    changeTableComment(
+        tableOrName: Table | string,
+        comment?: string,
+    ): Promise<void> {
+        throw new TypeORMError(
+            `spa driver does not support change table comment.`,
+        )
     }
 }

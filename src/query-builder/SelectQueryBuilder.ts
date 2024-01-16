@@ -2882,6 +2882,11 @@ export class SelectQueryBuilder<Entity extends ObjectLiteral>
                     })
                 })
             } else {
+                if (column.isVirtualProperty) {
+                    // Do not add unselected virtual properties to final select
+                    return
+                }
+
                 finalSelects.push({
                     selection: selectionPath,
                     aliasName: DriverUtils.buildAlias(
@@ -3765,7 +3770,7 @@ export class SelectQueryBuilder<Entity extends ObjectLiteral>
             (cacheOptions.alwaysEnabled &&
                 this.expressionMap.cache !== false) ||
             // ...or it's enabled locally explicitly.
-            this.expressionMap.cache
+            this.expressionMap.cache === true
         let cacheError = false
         if (this.connection.queryResultCache && isCachingEnabled) {
             try {
@@ -4219,22 +4224,24 @@ export class SelectQueryBuilder<Entity extends ObjectLiteral>
     ) {
         let condition: string = ""
         // let parameterIndex = Object.keys(this.expressionMap.nativeParameters).length;
-        if (Array.isArray(where) && where.length) {
-            condition =
-                "(" +
-                where
-                    .map((whereItem) => {
-                        return this.buildWhere(
-                            whereItem,
-                            metadata,
-                            alias,
-                            embedPrefix,
-                        )
-                    })
-                    .filter((condition) => !!condition)
-                    .map((condition) => "(" + condition + ")")
-                    .join(" OR ") +
-                ")"
+        if (Array.isArray(where)) {
+            if (where.length) {
+                condition =
+                    "(" +
+                    where
+                        .map((whereItem) => {
+                            return this.buildWhere(
+                                whereItem,
+                                metadata,
+                                alias,
+                                embedPrefix,
+                            )
+                        })
+                        .filter((condition) => !!condition)
+                        .map((condition) => "(" + condition + ")")
+                        .join(" OR ") +
+                    ")"
+            }
         } else {
             let andConditions: string[] = []
             for (let key in where) {

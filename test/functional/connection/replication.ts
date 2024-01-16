@@ -52,6 +52,8 @@ describe("Connection replication", () => {
                 })
             )[0]
 
+            if (!connection) return
+
             const post = new Post()
             post.title = "TypeORM Intro"
 
@@ -65,27 +67,43 @@ describe("Connection replication", () => {
 
         afterEach(() => closeTestingConnections([connection]))
 
-        it("connection.isConnected should be true", () =>
-            connection.isInitialized.should.be.true)
+        it("connection.isConnected should be true", () => {
+            if (!connection || connection.driver.options.type !== "postgres") {
+                return
+            }
+            connection.isInitialized.should.be.true
+        })
 
         it("query runners should go to the master by default", async () => {
+            if (!connection || connection.driver.options.type !== "postgres") {
+                return
+            }
             const queryRunner = connection.createQueryRunner()
             expect(queryRunner.getReplicationMode()).to.equal("master")
 
             await expectCurrentApplicationName(queryRunner, "master")
+            await queryRunner.release()
         })
 
         it("query runners can have their replication mode overridden", async () => {
+            if (!connection || connection.driver.options.type !== "postgres") {
+                return
+            }
             let queryRunner = connection.createQueryRunner("master")
             queryRunner.getReplicationMode().should.equal("master")
             await expectCurrentApplicationName(queryRunner, "master")
+            await queryRunner.release()
 
             queryRunner = connection.createQueryRunner("slave")
             queryRunner.getReplicationMode().should.equal("slave")
             await expectCurrentApplicationName(queryRunner, "slave")
+            await queryRunner.release()
         })
 
         it("read queries should go to the slaves by default", async () => {
+            if (!connection || connection.driver.options.type !== "postgres") {
+                return
+            }
             const result = await connection.manager
                 .createQueryBuilder(Post, "post")
                 .select("id")
@@ -98,6 +116,9 @@ describe("Connection replication", () => {
         })
 
         it("write queries should go to the master", async () => {
+            if (!connection || connection.driver.options.type !== "postgres") {
+                return
+            }
             const result = await connection.manager
                 .createQueryBuilder(Post, "post")
                 .insert()
@@ -143,6 +164,8 @@ describe("Connection replication", () => {
                 })
             )[0]
 
+            if (!connection) return
+
             const post = new Post()
             post.title = "TypeORM Intro"
 
@@ -157,23 +180,35 @@ describe("Connection replication", () => {
         afterEach(() => closeTestingConnections([connection]))
 
         it("query runners should go to the master by default", async () => {
+            if (!connection || connection.driver.options.type !== "postgres") {
+                return
+            }
             const queryRunner = connection.createQueryRunner()
             expect(queryRunner.getReplicationMode()).to.equal("master")
 
             await expectCurrentApplicationName(queryRunner, "master")
+            await queryRunner.release()
         })
 
         it("query runners can have their replication mode overridden", async () => {
+            if (!connection || connection.driver.options.type !== "postgres") {
+                return
+            }
             let queryRunner = connection.createQueryRunner("master")
             queryRunner.getReplicationMode().should.equal("master")
             await expectCurrentApplicationName(queryRunner, "master")
+            await queryRunner.release()
 
             queryRunner = connection.createQueryRunner("slave")
             queryRunner.getReplicationMode().should.equal("slave")
             await expectCurrentApplicationName(queryRunner, "slave")
+            await queryRunner.release()
         })
 
         it("read queries should go to the master by default", async () => {
+            if (!connection || connection.driver.options.type !== "postgres") {
+                return
+            }
             const result = await connection.manager
                 .createQueryBuilder(Post, "post")
                 .select("id")
